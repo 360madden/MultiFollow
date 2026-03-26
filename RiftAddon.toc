@@ -1,0 +1,21 @@
+Identifier = "MultiFollow"
+Name = "MultiFollow"
+NameShort = "MF"
+Description = "Multiboxing engine for Rift. Leader-driven follow and assist for up to 5 characters."
+Author = "Joey"
+Email = "360madden@gmail.com"
+Version = "0.1.0"
+Environment = "4.4"
+
+RunOnStartup = {
+    "core.lua",
+    "roles.lua",
+    "group.lua",
+    "comms.lua",
+    "ui.lua",
+    "main.lua",
+}
+
+SavedVariables = {
+    MultiFollowDB = "account",
+}
