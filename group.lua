@@ -3,7 +3,7 @@
 -- Purpose : Party member detection and registry.
 --           Scans group01..group04 specifiers, tracks joins
 --           and leaves via availability events.
---           Does NOT send messages — delegates to comms.lua.
+--           Does NOT send messages - delegates to comms.lua.
 -- ============================================================
 -- Confirmed pattern from Gadgets/wtLibUnitDatabase:
 --   Inspect.Unit.Lookup("group" .. string.format("%02d", i))
@@ -56,7 +56,7 @@ end
 -- OnAvailabilityFull
 -- Called from main.lua when Event.Unit.Availability.Full fires.
 -- Only re-scans if any of the newly available units are group
--- specifiers — avoids unnecessary work for unrelated units.
+-- specifiers - avoids unnecessary work for unrelated units.
 -- ============================================================
 
 function Group.OnAvailabilityFull(handle, units)

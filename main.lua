@@ -2,7 +2,7 @@
 -- MultiFollow | main.lua
 -- Purpose : Bootstrap and wiring only.
 --           Attaches all lifecycle and availability events.
---           No logic lives here — delegates to modules.
+--           No logic lives here - delegates to modules.
 -- ============================================================
 
 local toc, data = ...
@@ -35,7 +35,7 @@ Command.Event.Attach(
 )
 
 -- --------------------------------------------------------
--- 2. Addon load-end — main init
+-- 2. Addon load-end - main init
 -- --------------------------------------------------------
 
 local function OnLoadEnd(handle, identifier)
@@ -58,6 +58,10 @@ local function OnLoadEnd(handle, identifier)
 
     Core.PrintC(Core.COLOR.PREFIX,
         "v" .. Core.VERSION .. " loaded | Role: " .. (Core.config.role or "unassigned"))
+
+    if data.Roles and data.Roles.MaybePrintStartupReminder then
+        data.Roles.MaybePrintStartupReminder()
+    end
 end
 
 Command.Event.Attach(

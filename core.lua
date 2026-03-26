@@ -22,7 +22,7 @@ local Core = MultiFollow.Core
 -- toc.identifier is confirmed lowercase in working addons (Gadgets pattern).
 -- Version and Name field casing is inconsistent across Rift's API
 -- (RiftMeter reads Info.toc.Version with capital V via a nested sub-table).
--- Hardcoding these is the safest approach — update here when bumping versions.
+-- Hardcoding these is the safest approach - update here when bumping versions.
 Core.IDENTIFIER     = toc.identifier
 Core.VERSION        = "0.1.0"
 Core.NAME           = "MultiFollow"
@@ -66,20 +66,20 @@ Core.config = {}
 -- --------------------------------------------------------
 
 Core.COLOR = {
-    PREFIX   = "#FFD100",  -- gold   — [MultiFollow] tag
-    INFO     = "#FFFFFF",  -- white  — general info
-    LEADER   = "#00CCFF",  -- cyan   — leader role messages
-    FOLLOWER = "#88FF88",  -- green  — follower role messages
-    INVITE   = "#FFFF44",  -- yellow — /invite commands
-    SUCCESS  = "#44FF88",  -- bright green — all-ready confirmation
-    WARN     = "#FF9900",  -- orange — warnings / cap reached
-    ERROR    = "#FF4444",  -- red    — errors
-    DIM      = "#AAAAAA",  -- gray   — debug / low-priority info
+    PREFIX   = "#FFD100",  -- gold   - [MultiFollow] tag
+    INFO     = "#FFFFFF",  -- white  - general info
+    LEADER   = "#00CCFF",  -- cyan   - leader role messages
+    FOLLOWER = "#88FF88",  -- green  - follower role messages
+    INVITE   = "#FFFF44",  -- yellow - /invite commands
+    SUCCESS  = "#44FF88",  -- bright green - all-ready confirmation
+    WARN     = "#FF9900",  -- orange - warnings / cap reached
+    ERROR    = "#FF4444",  -- red    - errors
+    DIM      = "#AAAAAA",  -- gray   - debug / low-priority info
 }
 
 -- --------------------------------------------------------
--- Core.Print  — plain white body text, gold prefix
--- Core.PrintC — colored body text
+-- Core.Print  - plain white body text, gold prefix
+-- Core.PrintC - colored body text
 -- Verified 4-param signature from LLM_RIFT_API_v2_audited:
 --   Command.Console.Display(console, suppressPrefix, text, html)
 -- --------------------------------------------------------

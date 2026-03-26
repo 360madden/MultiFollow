@@ -35,7 +35,7 @@ function UI._OnSlash(handle, args)
         data.Roles.BecomeLeader()
 
     elseif cmd == "follow" then
-        -- Manual follower set. Not usually needed — leader's announce
+        -- Manual follower set. Not usually needed - leader's announce
         -- auto-configures followers who are running MultiFollow.
         data.Roles.BecomeFollower(nil)
 
@@ -169,5 +169,5 @@ function UI.PrintStatus()
     end
 end
 
--- STUB: ShowStatusFrame — Pass 5
+-- STUB: ShowStatusFrame - Pass 5
 function UI.ShowStatusFrame() end

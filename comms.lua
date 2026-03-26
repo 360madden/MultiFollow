@@ -1,6 +1,6 @@
 -- ============================================================
 -- MultiFollow | comms.lua
--- Purpose : All addon messaging. Fully silent — no chat output.
+-- Purpose : All addon messaging. Fully silent - no chat output.
 --
 -- PRE-PARTY HANDSHAKE  : Command.Message.Send (direct, reliable)
 --   Sends directly to a named player.
@@ -12,14 +12,14 @@
 --   Once grouped, party broadcast is used for follow/assist/stop.
 --
 -- PAYLOAD FORMAT
---   "MF:LEAD:<name>"   — leader→follower: I am the leader
---   "MF:FOLL:<name>"   — follower→leader: I am ready, invite me
---   "MF:CMD:<command>" — leader→party:   follow / assist / stop
+--   "MF:LEAD:<name>"   - leader->follower: I am the leader
+--   "MF:FOLL:<name>"   - follower->leader: I am ready, invite me
+--   "MF:CMD:<command>" - leader->party:   follow / assist / stop
 --
 -- Accept types (Command.Message.Accept valid types):
---   "send"   — direct messages via Command.Message.Send
---   "guild"  — guild broadcast (kept for future use)
---   "party"  — party broadcast (in-group commands)
+--   "send"   - direct messages via Command.Message.Send
+--   "guild"  - guild broadcast (kept for future use)
+--   "party"  - party broadcast (in-group commands)
 -- ============================================================
 -- Verified API (LLM_RIFT_API_v2_audited):
 --   Command.Message.Send(target, identifier, data, callback)
@@ -44,7 +44,7 @@ Comms._pendingFollowers = {}
 -- Accept "say" (pre-party proximity broadcast), "party"
 -- (in-group commands), and "send"/"guild" as fallbacks.
 -- "say" broadcast is silent, has no session or guild
--- requirement — just requires proximity, which is always
+-- requirement - just requires proximity, which is always
 -- true for multiboxing characters.
 -- ============================================================
 
@@ -93,7 +93,7 @@ end
 
 -- ============================================================
 -- SendLeaderAnnounce
--- Broadcasts MF:LEAD via "say" channel — reaches all nearby
+-- Broadcasts MF:LEAD via "say" channel - reaches all nearby
 -- players running MultiFollow with no session or guild
 -- requirement. Completely silent (never appears in chat).
 -- ============================================================
@@ -117,7 +117,7 @@ end
 
 -- ============================================================
 -- SendFollowerReady
--- Follower broadcasts MF:FOLL via "say" channel — same
+-- Follower broadcasts MF:FOLL via "say" channel - same
 -- proximity-based silent broadcast back to the leader.
 -- ============================================================
 
