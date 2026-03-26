@@ -37,7 +37,15 @@ function UI._OnSlash(handle, args)
     elseif cmd == "follow" then
         -- Manual follower set. Not usually needed - leader's announce
         -- auto-configures followers who are running MultiFollow.
-        data.Roles.BecomeFollower(nil)
+        if rest ~= "" then
+            data.Roles.BecomeFollower(rest)
+            data.Roles.SendReady()
+        else
+            data.Roles.BecomeFollower(nil)
+        end
+
+    elseif cmd == "ready" then
+        data.Roles.SendReady()
 
     elseif cmd == "scan" then
         -- Preview which friends would be contacted by /mf lead.
@@ -65,6 +73,8 @@ function UI.PrintHelp()
         "                list for online friends in your zone and",
         "                silently notifies them via addon messaging.",
         "  /mf follow  - THIS window becomes follower (manual).",
+        "  /mf follow <leader> - save leader and send ready now.",
+        "  /mf ready   - send follower ready to the saved leader.",
         "  /mf scan    - preview which friends would be contacted.",
         "  /mf status  - show group and follower state.",
         "  /mf debug   - print detailed addon state.",

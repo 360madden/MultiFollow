@@ -66,6 +66,35 @@ function Roles.BecomeFollower(leaderName)
     Core.PrintC(Core.COLOR.FOLLOWER, "Role: follower | Leader: " .. (leaderName or "(pending)"))
 end
 
+function Roles.SendReady()
+    if Roles.GetRole() == "leader" then
+        Core.PrintC(Core.COLOR.WARN, "Leader cannot send follower ready.")
+        return false
+    end
+
+    local myName = Core.state.playerName
+    local leaderName = Core.state.leaderName or Core.config.leaderName
+
+    if not leaderName or leaderName == "" then
+        Core.PrintC(Core.COLOR.ERROR, "No saved leader. Use /mf follow <leaderName> first.")
+        return false
+    end
+
+    if myName and string.lower(myName) == string.lower(leaderName) then
+        Core.PrintC(Core.COLOR.ERROR, "Saved leader matches this character. Check your role setup.")
+        return false
+    end
+
+    if data.Comms then
+        data.Comms.SendFollowerReady()
+        Core.PrintC(Core.COLOR.FOLLOWER, "Follower ready sent for leader " .. tostring(leaderName) .. ".")
+        return true
+    end
+
+    Core.PrintC(Core.COLOR.ERROR, "Comms not initialized.")
+    return false
+end
+
 function Roles.MaybePrintStartupReminder()
     if Roles._startupReminderShown then return end
     if Roles.GetRole() ~= "follower" then return end
