@@ -1,114 +1,107 @@
 # MultiFollow
 
-`MultiFollow` is a small multibox helper addon for **RIFT MMO**.
+`MultiFollow` is a lightweight **RIFT MMO** multibox helper built around a practical rule:
 
-It is built around a simple leader/follower model:
+**let the addon coordinate readiness, but let the leader handle the actual `/invite`.**
 
-- the leader announces itself with addon messaging
-- follower characters can recognize that leader and mark themselves ready
-- the leader manually invites followers with the normal in-game `/invite` command
+That keeps party formation simple and reliable while still giving you a clean leader/follower workflow.
 
-The addon is intentionally conservative during party formation. For a two-character setup, the cleanest workflow is still:
+## Highlights
 
-1. Start the leader with `/mf lead`
-2. Start the follower with `/mf follow <leaderName>` if needed
-3. Invite manually with `/invite <followerName>`
+- Leader / follower role tracking per character
+- Nearby friend discovery for your multibox characters
+- Pre-party addon messaging for leader announce and follower ready signals
+- Party membership tracking after invites go out
+- Clear `/mf` status output for quick checks
+- Designed around small multibox groups, especially 2-character setups
 
-After the party is formed, the addon can be extended for leader-driven follow / assist behavior.
+## Status
 
-## Current Status
+`MultiFollow` is in active prototyping.
 
-This project is focused on reliable multibox setup for a small party.
+Current focus:
 
-What it does now:
+- reliable multibox setup
+- clean leader/follower handoff
+- predictable manual invite workflow
 
-- tracks a leader / follower role per character
-- scans nearby friended characters
-- sends pre-party addon messages between characters
-- tracks follower readiness on the leader
-- prints pending manual invite targets
-- watches party membership changes
+Current non-goals:
 
-What it does not currently do:
+- automatic party invites through an unverified Rift API
+- trying to force pre-party messaging to any online friend anywhere
 
-- auto-invite through a Rift party API
-- guarantee pre-party messaging to any online friend anywhere
+## Why Manual Invite Is The Default
 
-## Why Manual Invite Is Preferred
+For multiboxing, manual `/invite` is the cleanest and most dependable workflow.
 
-For multiboxing, manual `/invite` is the most reliable option.
+Rift addon messaging before a party exists is more restrictive than normal in-party communication, so `MultiFollow` treats party formation like this:
 
-Rift addon messaging before a party exists is more restrictive than normal party communication. In practice, that means party formation is best kept simple:
+- use addon messaging for discovery and readiness
+- use normal `/invite` for the actual group invite
+- use addon coordination after the party exists
 
-- use addon messaging for discovery / readiness
-- use `/invite` for the actual group invite
-- use the addon for party behavior after the group exists
+That keeps the addon useful without depending on fragile pre-party automation.
+
+## Workflow At A Glance
+
+Example characters:
+
+- leader: `Shadowkorn`
+- follower: `Betatest`
+
+Recommended flow:
+
+1. Log both characters in.
+2. On the leader, run `/mf lead`.
+3. On the follower, run `/mf follow Shadowkorn` if needed.
+4. On the leader, invite with `/invite Betatest`.
+5. Run `/mf status` on the leader if you want to confirm readiness or current group state.
 
 ## Commands
 
-- `/mf lead`
-  Set this character as leader and announce to nearby friended followers.
-
-- `/mf follow`
-  Set this character as follower.
-
-- `/mf follow <leaderName>`
-  Set this character as follower, save the leader name, and immediately send a ready signal.
-
-- `/mf ready`
-  Re-send a ready signal to the saved leader.
-
-- `/mf scan`
-  Show which nearby friended characters the addon currently detects.
-
-- `/mf status`
-  Show current role, leader, group count, and pending follower invites.
-
-- `/mf debug`
-  Print a compact debug/status line.
-
-- `/mf help`
-  Show command help.
+| Command | What it does |
+| --- | --- |
+| `/mf lead` | Set this character as leader and announce to nearby friended followers. |
+| `/mf follow` | Set this character as follower. |
+| `/mf follow <leaderName>` | Set follower role, save the leader name, and send a ready signal immediately. |
+| `/mf ready` | Re-send a ready signal to the saved leader. |
+| `/mf scan` | Show which friended characters are currently being detected. |
+| `/mf status` | Show role, leader, party count, and pending follower invites. |
+| `/mf debug` | Print a compact debug/status line. |
+| `/mf help` | Show command help. |
 
 ## Installation
 
 1. Close Rift, or be ready to run `reloadui`.
-2. Place the addon folder here:
+2. Put the addon folder here:
 
 ```text
 Documents\RIFT\Interface\AddOns\MultiFollow
 ```
 
 3. Start Rift.
-4. Run `reloadui` if needed.
-
-## Recommended Two-Character Workflow
-
-Example:
-
-- leader: `Shadowkorn`
-- follower: `Betatest`
-
-Suggested flow:
-
-1. Log both characters in.
-2. On the leader, run `/mf lead`.
-3. On the follower, run `/mf follow Shadowkorn` if it has not already learned the leader.
-4. On the leader, invite with `/invite Betatest`.
-5. Use `/mf status` on the leader if you want to confirm follower readiness.
+4. Run `reloadui` if the addon was added while the game was already open.
 
 ## Notes
 
-- The addon currently expects your multibox characters to be on your friends list.
-- Nearby detection is more reliable when the characters are physically close in the same area.
-- If pre-party addon messaging is inconsistent in a fresh session, manual `/invite` is still the intended fallback.
+- Your multibox characters should be on your friends list.
+- Nearby detection is most reliable when the characters are physically close in the same area.
+- Pre-party addon messaging can still be session-sensitive in fresh logins, so manual `/invite` remains the intended fallback.
+- If the addon shows a follower as ready, the leader can just invite with the normal in-game command.
 
-## Files
+## Project Layout
 
-- [`core.lua`](./core.lua) - shared state, constants, config defaults
-- [`roles.lua`](./roles.lua) - leader / follower role handling
+- [`core.lua`](./core.lua) - shared state, constants, and config defaults
+- [`roles.lua`](./roles.lua) - leader / follower role management
 - [`comms.lua`](./comms.lua) - addon messaging and follower readiness tracking
 - [`group.lua`](./group.lua) - party membership scanning
-- [`ui.lua`](./ui.lua) - slash commands and status output
+- [`ui.lua`](./ui.lua) - slash commands and console output
 - [`main.lua`](./main.lua) - addon bootstrap and event wiring
 - [`RiftAddon.toc`](./RiftAddon.toc) - Rift addon manifest
+
+## Roadmap
+
+- Improve nearby-visible follower detection so pre-party messaging is more consistent
+- Add cleaner post-party follow / assist command handling
+- Tighten the two-character setup flow for everyday multibox use
+- Add screenshots / demo gifs to this README
