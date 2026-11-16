@@ -11,10 +11,20 @@
 -- IN-PARTY COMMANDS    : Command.Message.Broadcast("party", ...)
 --   Once grouped, party broadcast is used for follow/assist/stop.
 --
--- PAYLOAD FORMAT
---   "MF:LEAD:<name>"   - leader->follower: I am the leader
---   "MF:FOLL:<name>"   - follower->leader: I am ready, invite me
---   "MF:CMD:<command>" - leader->party:   follow / assist / stop
+-- PAYLOAD FORMAT  (protocol v2)
+--   "MF:LEAD:<seq>:<name>"        - leader->nearby: I am the leader
+--   "MF:FOLL:<seq>:<name>"        - follower->leader: ready, invite me
+--   "MF:ACK:<seq>:<id>"           - ack of any seq'd message
+--   "MF:CMD:<command>"            - leader->party: follow / assist / stop / positions
+--   "MF:POS:<seq>:<x>:<y>:<z>:<instance>"  - leader->party: my coords
+--   "MF:TGT:<seq>:<hp>:<name>"    - leader->party: my target (assist)
+--   "MF:BYE:<name>"               - either side: leaving the setup
+--
+-- RELIABILITY
+--   Handshake messages (LEAD/FOLL) are re-sent on a timer until
+--   acknowledged with MF:ACK. Say-channel broadcasts have no
+--   delivery guarantee, so this assurance layer is required for
+--   consistent formation.
 --
 -- Accept types (Command.Message.Accept valid types):
 --   "send"   - direct messages via Command.Message.Send
@@ -39,6 +49,24 @@ MultiFollow.Comms = Comms
 
 Comms._pendingFollowers = {}
 
+-- Reliability-layer state
+Comms.PROTO_VERSION  = 2
+Comms.RETRY_MS       = 1500     -- resend interval for unacked handshake msgs
+Comms.MAX_RETRIES    = 8        -- then give up (target likely not listening)
+Comms._seq           = 0        -- local message sequence counter
+Comms._outstanding   = {}       -- [msgId] = { payload, retries, sentAt }
+Comms._seen          = {}       -- [msgId] = os.clock()  (dedupe window)
+Comms._retryHandle   = nil
+
+local function _nextSeq()
+    Comms._seq = Comms._seq + 1
+    return Comms._seq
+end
+
+local function _msgId(name, seq)
+    return tostring(name) .. ":" .. tostring(seq)
+end
+
 -- ============================================================
 -- Init
 -- Accept "say" (pre-party proximity broadcast), "party"
@@ -59,6 +87,75 @@ function Comms.Init()
         Comms._OnReceive,
         Core.IDENTIFIER .. "_MsgReceive"
     )
+end
+
+-- ============================================================
+-- Assurance layer: sendHandshake / retry / ack
+-- All handshake traffic (LEAD/FOLL) goes through here so a
+-- lost say-broadcast is automatically re-sent.
+-- Timing source: Event.Game.Tick (1 Hz), attached by main.lua
+-- calling Comms.OnGameTick().
+-- ============================================================
+
+function Comms.OnGameTick()
+    -- Retry unacked handshake messages every tick.
+    for msgId, entry in pairs(Comms._outstanding) do
+        entry.retries = entry.retries + 1
+        if entry.retries >= Comms.MAX_RETRIES then
+            Comms._outstanding[msgId] = nil
+            Comms._OnHandshakeTimeout(msgId, entry)
+        else
+            Command.Message.Broadcast("say", nil, Core.MSG_IDENTIFIER, entry.payload)
+        end
+    end
+
+    -- Prune dedupe cache older than 60s (os.clock ~ uptime seconds).
+    local now = os.clock()
+    for id, t in pairs(Comms._seen) do
+        if now - t > 60 then Comms._seen[id] = nil end
+    end
+end
+
+function Comms._SendHandshake(payloadKind, name)
+    local seq     = _nextSeq()
+    local msgId   = _msgId(name, seq)
+    local payload = "MF:" .. payloadKind .. ":" .. seq .. ":" .. name
+
+    Comms._BroadcastReliable(payload, msgId)
+end
+
+-- Broadcast on "say" now, register for retry until acked.
+function Comms._BroadcastReliable(payload, msgId)
+    Command.Message.Broadcast("say", nil, Core.MSG_IDENTIFIER, payload)
+
+    Comms._outstanding[msgId] = {
+        payload = payload,
+        kind    = payload:match("^MF:(%a+)"),
+        retries = 0,
+    }
+end
+
+function Comms._AckMessage(msgId)
+    local seqPart = tostring(msgId):match(":(%d+)$")
+    Command.Message.Broadcast("say", nil, Core.MSG_IDENTIFIER,
+        "MF:ACK:" .. (seqPart or "0") .. ":" .. msgId)
+end
+
+function Comms._OnHandshakeTimeout(msgId, entry)
+    -- Only surface this on the leader side waiting for follower ready.
+    if entry.kind == "FOLL" and Core.config.role == "leader" then
+        local name = tostring(msgId):match("^([^:]+)")
+        Core.PrintC(Core.COLOR.WARN,
+            "No acknowledgement from " .. name ..
+            " after " .. Comms.MAX_RETRIES .. " attempts. " ..
+            "Is MultiFollow loaded on that character?")
+    end
+end
+
+function Comms._MarkSeen(msgId)
+    if Comms._seen[msgId] then return true end  -- duplicate
+    Comms._seen[msgId] = os.clock()
+    return false
 end
 
 -- ============================================================
@@ -96,45 +193,50 @@ end
 -- Broadcasts MF:LEAD via "say" channel - reaches all nearby
 -- players running MultiFollow with no session or guild
 -- requirement. Completely silent (never appears in chat).
+-- Retransmitted until acknowledged (assurance layer).
 -- ============================================================
 
 function Comms.SendLeaderAnnounce()
     local myName = Core.state.playerName or ""
     Comms._pendingFollowers = {}
 
-    Command.Message.Broadcast(
-        "say",
-        nil,
-        Core.MSG_IDENTIFIER,
-        "MF:LEAD:" .. myName
-    )
+    Comms._SendHandshake("LEAD", myName)
 
     local online = Comms.FindOnlineFriends()
     local expect = math.min(#online, Core.MAX_GROUP - 1)
     Core.PrintC(Core.COLOR.LEADER,
-        "Leader announce broadcast (say). Expecting up to " .. expect .. " reply(s)...")
+        "Leader announce broadcast (say, retrying until acked). Expecting up to "
+        .. expect .. " reply(s)...")
 end
 
 -- ============================================================
 -- SendFollowerReady
 -- Follower broadcasts MF:FOLL via "say" channel - same
 -- proximity-based silent broadcast back to the leader.
+-- Retransmitted until the leader acknowledges.
 -- ============================================================
 
 function Comms.SendFollowerReady()
     local myName = Core.state.playerName or ""
-
-    Command.Message.Broadcast(
-        "say",
-        nil,
-        Core.MSG_IDENTIFIER,
-        "MF:FOLL:" .. myName
-    )
+    Comms._SendHandshake("FOLL", myName)
 end
 
 -- ============================================================
--- SendPartyCommand  (Pass 3+)
--- Broadcasts a command to all party members.
+-- SendBye
+-- Announces that this character is leaving the setup so the
+-- other side can drop stale pending entries.
+-- ============================================================
+
+function Comms.SendBye()
+    local myName = Core.state.playerName or ""
+    Command.Message.Broadcast(
+        "say", nil, Core.MSG_IDENTIFIER, "MF:BYE:" .. myName)
+end
+
+-- ============================================================
+-- SendPartyCommand  (in-group control)
+-- Broadcasts a command to all party members over the party
+-- addon channel.
 -- ============================================================
 
 function Comms.SendPartyCommand(cmd)
@@ -147,37 +249,164 @@ function Comms.SendPartyCommand(cmd)
 end
 
 -- ============================================================
+-- SendPosition / SendTargetUpdate
+-- High-frequency telemetry uses plain party broadcasts (no ack;
+-- freshness matters more than delivery, and updates repeat).
+-- ============================================================
+
+function Comms.SendPosition(x, y, z, instance)
+    local seq = _nextSeq()
+    Command.Message.Broadcast(
+        "party", nil, Core.MSG_IDENTIFIER,
+        ("MF:POS:%d:%.1f:%.1f:%.1f:%s"):format(seq, x, y or 0, z, tostring(instance or ""))
+    )
+end
+
+function Comms.SendTargetUpdate(info)
+    if not info then
+        Command.Message.Broadcast(
+            "party", nil, Core.MSG_IDENTIFIER, "MF:TGT:0:-1:__none__")
+        return
+    end
+    local seq = _nextSeq()
+    -- Sanitize name: strip colons which would break field parsing.
+    local name = tostring(info.name or ""):gsub(":", "-")
+    Command.Message.Broadcast(
+        "party", nil, Core.MSG_IDENTIFIER,
+        "MF:TGT:" .. seq .. ":" .. tonumber(info.hp or -1) .. ":" .. name
+    )
+end
+
+-- ============================================================
 -- _OnReceive
--- Routes inbound messages by type and payload prefix.
+-- Routes inbound messages by payload prefix (protocol v2).
+-- Dedupes seq'd handshake traffic; dispatches in-party
+-- commands and telemetry to the owning modules.
 -- ============================================================
 
 function Comms._OnReceive(handle, from, msgType, channel, identifier, msgData)
     if identifier ~= Core.MSG_IDENTIFIER then return end
     if not msgData then return end
+    local myName = Core.state.playerName or ""
 
-    -- Leader announce received by followers (direct send)
-    local leaderName = msgData:match("^MF:LEAD:(.+)$")
+    -- ---- ACK (assurance layer) --------------------------------
+    local ackId = msgData:match("^MF:ACK:%d*:?([^%s]*)$")
+    if ackId and ackId ~= "" then
+        Comms._outstanding[ackId] = nil
+        return
+    end
+
+    -- ---- Leader announce: MF:LEAD:<seq>:<name> ---------------
+    local seq, leaderName = msgData:match("^MF:LEAD:(%d+):(.+)$")
     if leaderName then
-        if leaderName ~= Core.state.playerName and data.Roles then
+        if string.lower(leaderName) == string.lower(myName) then return end
+        local msgId = leaderName .. ":" .. seq
+        Comms._AckMessage(msgId)
+        if Comms._MarkSeen(msgId) then return end   -- duplicate retry
+        if data.Roles then
             data.Roles.OnLeaderAnnounce(leaderName)
         end
         return
     end
 
-    -- Follower ready reply received by leader (direct send)
-    local followerName = msgData:match("^MF:FOLL:(.+)$")
+    -- ---- Follower ready: MF:FOLL:<seq>:<name> ----------------
+    local fSeq, followerName = msgData:match("^MF:FOLL:(%d+):(.+)$")
     if followerName then
-        if Core.config.role == "leader" and followerName ~= Core.state.playerName then
-            Comms._RegisterFollower(followerName)
+        if string.lower(followerName) == string.lower(myName) then return end
+        local msgId = followerName .. ":" .. fSeq
+        Comms._AckMessage(msgId)
+        if Comms._MarkSeen(msgId) then return end
+        if Core.config.role == "leader" and data.Roles then
+            data.Roles.OnFollowerReady(followerName)
         end
         return
     end
 
-    -- In-party commands (Pass 3+)
+    -- ---- Bye --------------------------------------------------
+    local byeName = msgData:match("^MF:BYE:(.+)$")
+    if byeName then
+        Comms._UnregisterPending(byeName)
+        return
+    end
+
+    -- ---- In-party commands: MF:CMD:<cmd> ----------------------
     local cmd = msgData:match("^MF:CMD:(.+)$")
     if cmd then
-        -- TODO: dispatch to Roles in later passes
+        Comms._DispatchCommand(cmd)
         return
+    end
+
+    -- ---- Position telemetry: MF:POS:<seq>:<x>:<y>:<z>:<inst> --
+    local pSeq, px, py, pz, pInst =
+        msgData:match("^MF:POS:(%d+):([%-%d%.]+):([%-%d%.]+):([%-%d%.]+):(.*)$")
+    if pSeq then
+        if Core.config.role ~= "leader" and data.Follow then
+            data.Follow.OnLeaderPosition(
+                tonumber(px), tonumber(py), tonumber(pz),
+                (pInst ~= "" and pInst) or nil, tonumber(pSeq))
+        end
+        return
+    end
+
+    -- ---- Target telemetry: MF:TGT:<seq>:<hp>:<name> -----------
+    local tSeq, tHp, tName = msgData:match("^MF:TGT:(%d+):(%-?%d+):(.+)$")
+    if tSeq then
+        if data.Assist then
+            local info = nil
+            if tName ~= "__none__" then
+                info = { name = tName, hp = tonumber(tHp) }
+            end
+            data.Assist.OnTargetBroadcast(info)
+        end
+        return
+    end
+end
+
+-- ============================================================
+-- _DispatchCommand
+-- MF:CMD payloads from the leader. Followers act; leaders
+-- ignore their own echoes.
+-- ============================================================
+
+function Comms._DispatchCommand(cmd)
+    if cmd == "follow-on" then
+        if Core.config.role ~= "leader" and data.Follow then
+            data.Follow.Start(true)
+            Core.PrintC(Core.COLOR.FOLLOWER, "Follow mode enabled by leader.")
+        end
+    elseif cmd == "follow-off" or cmd == "stop" then
+        if Core.config.role ~= "leader" and data.Follow then
+            data.Follow.Stop(true)
+            Core.PrintC(Core.COLOR.WARN, "Follow mode disabled by leader.")
+        end
+    elseif cmd == "assist-on" then
+        if Core.config.role ~= "leader" and data.Assist then
+            data.Assist.FollowerSet(true)
+        end
+    elseif cmd == "assist-off" then
+        if Core.config.role ~= "leader" and data.Assist then
+            data.Assist.FollowerSet(false)
+        end
+    elseif cmd == "status-request" then
+        -- Leader asked followers to report readiness back.
+        if Core.config.role ~= "leader" then
+            Comms.SendFollowerReady()
+        end
+    end
+end
+
+-- ============================================================
+-- _UnregisterPending  (private)
+-- Remove a name from the pending-followers list (e.g. BYE).
+-- ============================================================
+
+function Comms._UnregisterPending(name)
+    for i, n in ipairs(Comms._pendingFollowers) do
+        if n == name then
+            table.remove(Comms._pendingFollowers, i)
+            Core.PrintC(Core.COLOR.DIM, "Follower withdrew: " .. name)
+            return
+        end
     end
 end
 
@@ -215,6 +444,22 @@ end
 -- GetPendingFollowers
 -- ============================================================
 
+-- ============================================================
+-- Roles.OnFollowerReady -> Comms._RegisterFollower is the
+-- registration path (see roles.lua).
+-- ============================================================
+
 function Comms.GetPendingFollowers()
     return Comms._pendingFollowers
+end
+
+-- ============================================================
+-- ClearPending
+-- Leader calls this on /mf stop or when leaving setup.
+-- Sends BYE for each still-uninvited follower? No - BYE is
+-- sent by the withdrawing side; here we just drop our list.
+-- ============================================================
+
+function Comms.ClearPending()
+    Comms._pendingFollowers = {}
 end

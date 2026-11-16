@@ -49,6 +49,7 @@ local function OnLoadEnd(handle, identifier)
 
     -- Init sub-modules in dependency order
     data.Comms.Init()
+    data.Follow.Init()   -- also attaches the shared Event.Game.Tick
     data.UI.Init()
 
     -- Initial group scan (in case already in a party on reload)
@@ -71,7 +72,33 @@ Command.Event.Attach(
 )
 
 -- --------------------------------------------------------
--- 3. Party member availability events
+-- 3. Shared 1 Hz clock
+--    Drives comms handshake retries, follow evaluation,
+--    leader position telemetry, and assist polling.
+--    Follow.Init() attaches the subscription; this handler
+--    fans out to every module's tick entry point.
+-- --------------------------------------------------------
+
+local function OnGameTick(handle)
+    if not Core.state.initialized then return end
+
+    if data.Comms and next(data.Comms._outstanding) ~= nil then
+        data.Comms.OnGameTick()
+    end
+
+    if data.Follow then
+        data.Follow._OnGameTick(handle)
+    end
+end
+
+Command.Event.Attach(
+    Event.Game.Tick,
+    OnGameTick,
+    toc.identifier .. "_GameTick"
+)
+
+-- --------------------------------------------------------
+-- 4. Party member availability events
 --    Delegate straight to Group module.
 -- --------------------------------------------------------
 
