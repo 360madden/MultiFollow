@@ -119,7 +119,7 @@ end
 
 -- --------------------------------------------------------
 -- OnLeaderAnnounce
--- Fired by Comms when MF:LEAD:<name> arrives via direct send.
+-- Fired by Comms when MF:LEAD arrives via proximity broadcast.
 -- Auto-configures this character as a follower and replies.
 -- Leaders silently ignore this (two leaders on same session
 -- is not a supported configuration).
@@ -137,16 +137,66 @@ end
 
 -- --------------------------------------------------------
 -- OnFollowerReady
--- Comms._RegisterFollower handles the printing/tracking.
--- This hook is available for future logic.
+-- Leader side: register the ready follower so /mf status and
+-- the invite checklist stay in sync. Dedupe/cap handled by
+-- Comms._RegisterFollower.
 -- --------------------------------------------------------
 
 function Roles.OnFollowerReady(followerName)
-    -- handled in comms._RegisterFollower
+    if data.Comms then
+        data.Comms._RegisterFollower(followerName)
+    end
 end
 
--- STUB: OnFollow - Pass 3
-function Roles.OnFollow() end
+-- --------------------------------------------------------
+-- Unassign
+-- Clears role + leader association and tells any listening
+-- counterpart to drop us from its pending list.
+-- --------------------------------------------------------
 
--- STUB: OnAssist - Pass 4
-function Roles.OnAssist() end
+function Roles.Unassign()
+    local wasRole = Roles.GetRole()
+
+    if wasRole == "follower" and data.Comms then
+        data.Comms.SendBye()
+    end
+
+    if wasRole == "leader" then
+        if data.Comms then data.Comms.ClearPending() end
+        if data.Follow then data.Follow.LeaderBroadcastSet(false) end
+        if data.Assist then data.Assist.LeaderSet(false) end
+    else
+        if data.Follow then data.Follow.Stop(true) end
+        if data.Assist then data.Assist.FollowerSet(false) end
+    end
+
+    Core.state.leaderName    = nil
+    Core.config.leaderName   = nil
+    MultiFollowDB.leaderName = nil
+    Roles.SetRole("unassigned")
+    Roles._startupReminderShown = false
+
+    Core.PrintC(Core.COLOR.DIM, "Role cleared. This character is unassigned.")
+end
+
+-- --------------------------------------------------------
+-- StopAll
+-- /mf stop on either side: followers halt following; leader
+-- additionally halts all telemetry/command modes.
+-- --------------------------------------------------------
+
+function Roles.StopAll()
+    if Core.config.role == "leader" then
+        -- Tell every follower to stop before we silence ourselves.
+        if data.Comms then
+            data.Comms.SendPartyCommand("stop")
+            data.Comms.ClearPending()
+        end
+        if data.Follow then data.Follow.LeaderBroadcastSet(false) end
+        if data.Assist then data.Assist.LeaderSet(false) end
+        Core.PrintC(Core.COLOR.WARN, "Leader halted: stop sent to party.")
+    else
+        if data.Follow then data.Follow.Stop() end
+        if data.Assist then data.Assist.FollowerSet(false) end
+    end
+end

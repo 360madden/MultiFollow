@@ -47,6 +47,33 @@ function UI._OnSlash(handle, args)
     elseif cmd == "ready" then
         data.Roles.SendReady()
 
+    elseif cmd == "go" then
+        -- Leader: arm the whole setup (positions + follow + assist).
+        UI.CommandGo()
+
+    elseif cmd == "stop" then
+        -- Either side: halt following / broadcasting.
+        data.Roles.StopAll()
+
+    elseif cmd == "followmode" or cmd == "fm" then
+        -- Follower-local toggle of auto-follow (no comms needed).
+        if data.Follow then data.Follow.Toggle() end
+
+    elseif cmd == "assist" then
+        if rest ~= "" then
+            local on = (rest == "on")
+            if Core.config.role == "leader" then
+                data.Assist.LeaderSet(on)
+            else
+                data.Assist.FollowerSet(on)
+            end
+        else
+            data.Assist.Toggle()
+        end
+
+    elseif cmd == "unassign" then
+        data.Roles.Unassign()
+
     elseif cmd == "scan" then
         -- Preview which friends would be contacted by /mf lead.
         UI.PrintFriendScan()
@@ -63,22 +90,62 @@ function UI._OnSlash(handle, args)
 end
 
 -- --------------------------------------------------------
+-- CommandGo  (leader)
+-- Arms the coordinated session: starts position broadcasting,
+-- then tells all party followers to begin following and
+-- mirroring the leader's target.
+-- --------------------------------------------------------
+
+function UI.CommandGo()
+    if Core.config.role ~= "leader" then
+        Core.PrintC(Core.COLOR.WARN,
+            "/mf go is a leader command. Followers: use /mf fm to toggle follow locally.")
+        return
+    end
+
+    if (Core.state.groupCount or 0) == 0 then
+        Core.PrintC(Core.COLOR.ERROR,
+            "No party members yet. Invite your followers first (see /mf status).")
+        return
+    end
+
+    data.Follow.LeaderBroadcastSet(true)
+    data.Comms.SendPartyCommand("follow-on")
+    data.Comms.SendPartyCommand("assist-on")
+    data.Assist.LeaderSet(true)
+
+    Core.PrintC(Core.COLOR.SUCCESS,
+        "GO: broadcasting positions, followers engaged (" ..
+        Core.state.groupCount .. " in party).")
+end
+
+-- --------------------------------------------------------
 -- PrintHelp
 -- --------------------------------------------------------
 
 function UI.PrintHelp()
     local lines = {
         "MultiFollow v" .. Core.VERSION .. " commands:",
-        "  /mf lead    - THIS window becomes leader. Scans friends",
-        "                list for online friends in your zone and",
-        "                silently notifies them via addon messaging.",
-        "  /mf follow  - THIS window becomes follower (manual).",
-        "  /mf follow <leader> - save leader and send ready now.",
-        "  /mf ready   - send follower ready to the saved leader.",
-        "  /mf scan    - preview which friends would be contacted.",
-        "  /mf status  - show group and follower state.",
-        "  /mf debug   - print detailed addon state.",
-        "  /mf help    - show this message.",
+        "  SETUP",
+        "  /mf lead          - THIS window becomes leader; announce",
+        "                      to nearby MultiFollow characters.",
+        "  /mf follow        - become follower (auto via leader announce).",
+        "  /mf follow <name> - save leader name and send ready now.",
+        "  /mf ready         - re-send follower ready to saved leader.",
+        "  /mf unassign      - clear role and leader association.",
+        "",
+        "  OPERATION (after party is formed)",
+        "  /mf go            - LEADER: start position broadcast and",
+        "                      order all followers to follow+assist.",
+        "  /mf stop          - halt following/broadcasting (either side).",
+        "  /mf fm            - FOLLOWER: toggle auto-follow locally.",
+        "  /mf assist [on|off] - toggle assist (role-aware).",
+        "",
+        "  DIAGNOSTICS",
+        "  /mf scan          - preview which friends are detectable.",
+        "  /mf status        - show group and follower state.",
+        "  /mf debug         - print detailed addon state.",
+        "  /mf help          - show this message.",
     }
     for _, line in ipairs(lines) do Core.PrintC(Core.COLOR.DIM, line) end
 end
@@ -146,6 +213,34 @@ function UI.PrintDebug()
         " | Leader: "  .. (Core.state.leaderName or "none") ..
         " | Party: "   .. (Core.state.groupCount or 0)
     )
+
+    if data.Follow then
+        local f = data.Follow.GetDebugInfo()
+        Core.PrintC(Core.COLOR.DIM,
+            "Follow : active=" .. tostring(f.active) ..
+            " traveling=" .. tostring(f.traveling) ..
+            " target=" .. tostring(f.hasTarget) ..
+            " seq=" .. tostring(f.lastSeq) ..
+            " drops=" .. tostring(f.drops) ..
+            " leadBcast=" .. tostring(data.Follow.leaderBroadcast))
+    end
+
+    if data.Assist then
+        local a = data.Assist.GetDebugInfo()
+        Core.PrintC(Core.COLOR.DIM,
+            "Assist : leaderOn=" .. tostring(a.leaderOn) ..
+            " followerOn=" .. tostring(a.followerOn) ..
+            " lastKey=" .. tostring(a.lastKey))
+    end
+
+    if data.Comms then
+        local outstanding = 0
+        for _ in pairs(data.Comms._outstanding) do outstanding = outstanding + 1 end
+        Core.PrintC(Core.COLOR.DIM,
+            "Comms  : proto v" .. data.Comms.PROTO_VERSION ..
+            " unacked=" .. outstanding ..
+            " pending=" .. #data.Comms.GetPendingFollowers())
+    end
 end
 
 -- --------------------------------------------------------
@@ -177,7 +272,22 @@ function UI.PrintStatus()
             end
         end
     end
-end
 
--- STUB: ShowStatusFrame - Pass 5
-function UI.ShowStatusFrame() end
+    -- Session modes
+    if data.Follow then
+        local mode
+        if Core.config.role == "leader" then
+            mode = data.Follow.leaderBroadcast and "BROADCASTING positions" or "idle"
+        else
+            mode = data.Follow.IsActive() and "FOLLOWING leader" or "idle"
+        end
+        Core.PrintC(Core.COLOR.DIM, "Mode      : " .. mode)
+    end
+
+    if data.Assist then
+        local a = data.Assist.GetDebugInfo()
+        Core.PrintC(Core.COLOR.DIM,
+            "Assist    : " .. (a.leaderOn and "broadcasting" or
+                               (a.followerOn and "mirroring" or "off")))
+    end
+end
